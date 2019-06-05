@@ -46,6 +46,8 @@ class ImageAnalyzer:
         self.ransac_heuristic = ransac_heuristic
         self.iteration_heuristic_probability = iteration_heuristic_probability
         self.transformation = transformation
+        self.small_r: float = -1
+        self.big_R: float = -1
 
     def run(self):
         print("Extracting")
@@ -62,6 +64,9 @@ class ImageAnalyzer:
 
         if self.ransac_heuristic == RansacHeuristic.ITERATIONS:
             self.estimate_ransac_iterations()
+
+        if self.ransac_heuristic == RansacHeuristic.DISTANCE:
+            self.init_distance_heuristic_params()
 
         if self.transformation == TransformationType.AFFINE:
             def get_sample(distribution):
@@ -81,6 +86,12 @@ class ImageAnalyzer:
         print(len(self.consistent_key_point_pairs))
         print(len(self.best_ransac_consensus))
         self.show_images()
+
+    def init_distance_heuristic_params(self):
+        image1 = cv2.imread(self.first_img_name)
+        size = max(image1.shape)
+        self.small_r = (0.01 * size) ** 2
+        self.big_R = (0.3 * size) ** 2
 
     def extract_files(self):
         self.extract_image(self.first_img_name)
@@ -264,6 +275,12 @@ class ImageAnalyzer:
         return np.reshape(np.append(result, [[1]]), (3, 3))
 
     def get_random_sample(self, number_of_points: int, key_point_pairs: List[KeyPointPair]):
+        if self.ransac_heuristic == RansacHeuristic.DISTANCE:
+            return self.get_random_sample_heuristic(number_of_points, key_point_pairs)
+        else:
+            return self.get_random_sample_normal(number_of_points, key_point_pairs)
+
+    def get_random_sample_normal(self, number_of_points: int, key_point_pairs: List[KeyPointPair]):
         result: List[KeyPointPair] = []
         while len(result) < number_of_points:
             random_pair = random.choice(key_point_pairs)
@@ -277,6 +294,32 @@ class ImageAnalyzer:
                 result.append(random_pair)
 
         return result
+
+    def get_random_sample_heuristic(self, number_of_points: int, key_point_pairs: List[KeyPointPair]):
+        result: List[KeyPointPair] = []
+        pairs_copy = list(key_point_pairs)
+
+        while len(result) < number_of_points:
+            random_pair = random.choice(pairs_copy)
+            pairs_copy = self.filter_incorrect_pairs(random_pair, pairs_copy)
+            if len(pairs_copy) > 0:
+                result.append(random_pair)
+            else:
+                result = []
+                pairs_copy = list(key_point_pairs)
+
+        return result
+
+    def filter_incorrect_pairs(self, new_pair: KeyPointPair, pairs_list: List[KeyPointPair]):
+        def satisfies_heuristic(pair1: KeyPointPair, pair2: KeyPointPair):
+            distance1 = pair1[0].square_distance(pair2[0])
+            if self.small_r < distance1 < self.big_R:
+                distance2 = pair1[1].square_distance(pair2[1])
+                return self.small_r < distance2 < self.big_R
+            else:
+                return False
+        return list(filter(lambda pair: satisfies_heuristic(new_pair, pair), pairs_list))
+
 
     def estimate_ransac_iterations(self):
         if len(self.key_point_pairs) == 0:

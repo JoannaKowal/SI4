@@ -193,7 +193,8 @@ class ImageAnalyzer:
             if len(current_consensus) > len(best_consensus):
                 best_consensus = current_consensus
                 best_transformation = A
-#jeśli heurystyka rozkładu, to dodać do distribution sample
+                if self.ransac_heuristic == RansacHeuristic.DISTRIBUTION:
+                    distribution.extend(sample)
         self.best_ransac_consensus = best_consensus
         self.best_model = best_transformation
 
